@@ -9,22 +9,65 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+```{r message=FALSE}
+library(dplyr)
+library(timetk)
+library(tidyr)
+covid <- read.csv("covid_19_data_portal.csv", header=TRUE, stringsAsFactors=FALSE)
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+# Get the travel category data
+travel <- filter(covid, category == "Travel")
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+# Check for missing data
+is.null(travel)
 ```
 
-## Including Plots
+```{r message=FALSE}
+# Convert parameter column to date object and rename
+travel$parameter <- as.Date(travel$parameter)
+travel <- rename(travel, Date = parameter)
 
-You can also embed plots, for example:
+# Convert value column to numeric 
+travel$value <- as.integer(travel$value)
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+# Remove un-needed columns
+travel_select <- select(travel, indicator_name, series_name, Date, value)
+
+
+# Get all arrival data
+arrivals <- filter(travel_select, grepl("arrivals", indicator_name))
+
+# Get all departure data
+departures <- filter(travel_select, grepl("departures", indicator_name))
+
+# Drop indicator name column for arrivals and departures
+arrivals <- select(arrivals, -indicator_name)
+departures <- select(departures, -indicator_name)
+
+# Widen data to have a column for each series_name
+arrivals_wide <- pivot_wider(arrivals, id_cols = Date, names_from = series_name, values_from = value)
+departures_wide <- pivot_wider(departures, id_cols = Date, names_from = series_name, values_from = value)
+
+# Rename columns to remove spaces
+colnames(arrivals_wide) <- make.names(colnames(arrivals_wide), unique=TRUE)
+colnames(departures_wide) <- make.names(colnames(departures_wide), unique=TRUE)
+
+# Check for missing values
+any(is.na(arrivals_wide))
+any(is.na(departures_wide))
+```
+```{r}
+# Ensure that columns Auckland, Christchurch, Queenstown, Wellington and Other add to Total value.
+all(mutate(arrivals_wide, SUM = Auckland + Christchurch + Queenstown + Wellington + Other)$SUM == arrivals_wide$Total)
+all(mutate(departures_wide, SUM = Auckland + Christchurch + Queenstown + Wellington + Other)$SUM == departures_wide$Total)
+```
+```{r}
+# Ensure that columns New Zealand passport and Other passports add to Total
+all(mutate(arrivals_wide, SUM = New.Zealand.passport + Other.passports)$SUM == arrivals_wide$Total)
+all(mutate(departures_wide, SUM = New.Zealand.passport + Other.passports)$SUM == departures_wide$Total)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+head(arrivals_wide)
+```
+
